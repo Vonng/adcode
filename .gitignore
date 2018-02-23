@@ -1,0 +1,13 @@
+
+
+# Backup
+data/backup
+data/backup/
+
+# MacOS
+.DS_Store
+
+
+# Jetbrain
+.idea/
+adcode.iml

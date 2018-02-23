@@ -1,0 +1,272 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+#==============================================================#
+# Author: Vonng(fengruohang@outlook.com)                       #
+# Desc  : adcode ctl                                           #
+#==============================================================#
+
+# change environment variable PGURL to customize data source
+# NOTICE: COPY require superuser privilege
+declare PGURL=${PGURL:='postgres://localhost:5432/adcode'}
+
+declare -r PROGRAM_DIR="$(cd $(dirname $0) && pwd)"
+declare -r PROJECT_DIR="$(cd "${PROGRAM_DIR}/../" && pwd)"
+
+declare -r DATA_DIR="${PROJECT_DIR}/data"
+declare -r ADCODE_DIR="${DATA_DIR}/adcode"
+declare -r FENCES_DIR="${DATA_DIR}/fences"
+declare -r BACKUP_DIR="${DATA_DIR}/backup"
+
+declare -r -i PARALLEL_WORKER=16
+
+#==============================================================#
+#                           ADCODE                             #
+#==============================================================#
+# create adcode table
+# warn: old adcode will be dropped
+function adcode_create(){
+    psql ${PGURL} <<-SQL
+        DROP TABLE IF EXISTS adcode;
+        CREATE TABLE adcode (
+          code         BIGINT PRIMARY KEY,
+          parent       BIGINT REFERENCES adcode (code),
+          name         VARCHAR(64),
+          level        VARCHAR(16),
+          rank         INTEGER,
+          adcode       INTEGER,
+          post_code    VARCHAR(8),
+          area_code    VARCHAR(4),
+          ur_code      VARCHAR(4),
+          municipality BOOLEAN,
+          virtual      BOOLEAN,
+          longitude    FLOAT,
+          latitude     FLOAT,
+          center       GEOMETRY,
+          province     VARCHAR(64),
+          city         VARCHAR(64),
+          county       VARCHAR(64),
+          town         VARCHAR(64),
+          village      VARCHAR(64)
+        );
+
+        -- comment
+        COMMENT ON TABLE adcode IS '中国行政区划表';
+        COMMENT ON COLUMN adcode.code IS '国家统计局12位行政区划代码';
+        COMMENT ON COLUMN adcode.parent IS '12位父级行政区划代码';
+        COMMENT ON COLUMN adcode.city IS '6位县级行政区划代码';
+        COMMENT ON COLUMN adcode.level IS '行政单位级别:国/省/市/县/乡/村';
+        COMMENT ON COLUMN adcode.name IS '行政单位名称';
+        COMMENT ON COLUMN adcode.rank IS '行政单位级别{0:国,1:省,2:市,3:区/县,4:乡/镇，5:街道/村}';
+        COMMENT ON COLUMN adcode.adcode IS '6位县级行政区划代码';
+        COMMENT ON COLUMN adcode.post_code IS '邮政编码';
+        COMMENT ON COLUMN adcode.area_code IS '长途区号';
+        COMMENT ON COLUMN adcode.ur_code IS '3位城乡属性划分代码';
+        COMMENT ON COLUMN adcode.municipality IS '是否为直辖行政单位';
+        COMMENT ON COLUMN adcode.virtual IS '是否为虚拟行政单位';
+        COMMENT ON COLUMN adcode.longitude IS '地理中心经度';
+        COMMENT ON COLUMN adcode.latitude IS '地理中心纬度';
+        COMMENT ON COLUMN adcode.center IS '地理中心, ST_Point';
+        COMMENT ON COLUMN adcode.province IS '省';
+        COMMENT ON COLUMN adcode.city IS '市';
+        COMMENT ON COLUMN adcode.county IS '区/县';
+        COMMENT ON COLUMN adcode.town IS '乡/镇';
+        COMMENT ON COLUMN adcode.village IS '街道/村';
+SQL
+}
+
+# create index on adcode, it's quite slow through
+function adcode_index(){
+    psql ${PGURL} <<-SQL
+        CREATE INDEX ON adcode USING BTREE ((code :: TEXT));
+        CREATE INDEX ON adcode USING BTREE (adcode);
+        CREATE INDEX ON adcode USING BTREE (parent);
+        CREATE INDEX ON adcode USING BTREE (name);
+        CREATE INDEX ON adcode USING BTREE (rank);
+        CREATE INDEX ON adcode USING GIST  (center);
+SQL
+}
+
+# reorder adcode in physical storage
+function adcode_order(){
+    psql ${PGURL} <<-SQL
+        DROP TABLE IF EXISTS bk_adcode;
+        SELECT * INTO bk_adcode FROM adcode;
+        TRUNCATE adcode;
+        INSERT INTO adcode SELECT * FROM bk_adcode ORDER BY rank, code;
+        DROP TABLE IF EXISTS bk_adcode;
+SQL
+}
+
+# drop adcode table
+function adcode_drop (){
+    local sql="DROP TABLE IF EXISTS adcode;"
+    psql ${PGURL} -c "${sql}"
+}
+
+# truncate adcode table
+function adcode_trunc(){
+    local sql="TRUNCATE TABLE adcode;"
+    psql ${PGURL} -c "${sql}"
+}
+
+# clean fence data directory
+function adcode_clean(){
+    rm -rf ${ADCODE_DIR}
+    mkdir -p ${ADCODE_DIR}
+}
+
+# dump adcode to csv
+# $1... :   optional list of adcode(6)
+# PARALLEL_WORKER will affect dump all action
+function adcode_dump(){
+    adcode_clean
+
+    # list of adcode(\d{6}) provided
+    if (($# != 0)); then
+        echo $@ | xargs -n1 -P 4 -I {} \
+        psql ${PGURL} -c "COPY(SELECT * FROM adcode WHERE adcode = {}) TO '${ADCODE_DIR}/{}.csv' DELIMITER ',' CSV;"
+        return $?
+    fi
+
+    # dump all adcode beyond county level
+    psql ${PGURL} -Atzc 'SELECT DISTINCT code/1000000 as adcode FROM adcode WHERE code%1000000=0;' \
+    | xargs -n1 -I {} -P ${PARALLEL_WORKER} \
+    psql ${PGURL} -c "COPY(SELECT * FROM adcode WHERE adcode = {}) TO '${ADCODE_DIR}/{}.csv' DELIMITER ',' CSV;" 1> /dev/null
+    return $?
+}
+
+
+# load adcode from csv table to postgres
+# this is copy rather than upsert
+function adcode_load(){
+    # if code is provided
+    if (($# != 0)); then
+        local adcodeList=$@
+    else
+        local adcodeList=$(ls ${ADCODE_DIR} | sort |  awk -F"." '{print $1}')
+    fi
+
+    mkdir -p ${BACKUP_DIR}
+    tmpSqlFile="${BACKUP_DIR}/t_adcode.sql"
+    echo -n '' > ${tmpSqlFile}
+
+    for adcode in ${adcodeList} ;do
+        local -i code=${adcode%.csv}
+        local file="${ADCODE_DIR}/${code}.csv"
+        cat ${file} >> ${tmpSqlFile}
+
+    done
+
+    echo "temp sql file : ${tmpSqlFile}, ready to commit"
+    trap "rm -f ${tmpSqlFile}" INT TERM QUIT ABRT HUP
+    psql ${PGURL} -c "COPY adcode FROM '${tmpSqlFile}' DELIMITER ',' CSV;"
+    rm -f ${tmpSqlFile}
+    return $?
+}
+
+# show adcode distribution
+function adcode_check(){
+    sql='SELECT level,count(*) AS cnt FROM adcode GROUP BY level ORDER BY 2;'
+    psql ${PGURL} -tzc "${sql}"
+    psql ${PGURL} -tzc "SELECT * FROM adcode LIMIT 10;"
+}
+
+# create backup using pg_dump
+function adcode_backup(){
+    mkdir -p ${BACKUP_DIR}
+    pg_dump ${PGURL} -t adcode -f ${BACKUP_DIR}/adcode.sql
+}
+
+# restore adcode from backup
+function adcode_restore(){
+    adcode_drop
+    psql ${PGURL} -f ${BACKUP_DIR}/adcode.sql
+}
+
+# truncate & load adcode
+function adcode_reload(){
+    adcode_trunc
+    adcode_load
+    adcode_check
+}
+
+# drop & create adcode
+function adcode_reset(){
+    adcode_drop
+    adcode_create
+}
+
+# create & load & index
+function adcode_setup(){
+    adcode_create
+    adcode_load
+    adcode_index
+}
+
+
+# print adcode ctl usage
+function adcode_usage(){
+    cat <<-EOF
+Usage:
+    bin/adcode <action>
+
+    Where action could be:
+
+    create  :   create table
+    index   :   create index on adcode
+    order   :   reorder adcode physical storage
+    drop    :   drop table
+    trunc   :   truncate table
+    clean   :   remove dump data
+    dump    :   dump data to data/adcode in csv format
+    load    :   load data from data/adcode
+    backup  :   make a quick pg_dump backup
+    resotre :   restore from backup
+    check   :   glimpse at adcode data
+    reload  :   truncate & reload from file
+    reset   :   drop and recreate table
+    setup   :   create table & load data & create index
+    usage   :   show this message
+
+    dump & load could accept a list of adcode, so they only
+    perform dump & load on those files rather than all data.
+
+    dump & load could accept a list of adcode, so they only
+    perform dump & load on those files rather than all data.
+    e.g. dump/load <code1> <code2> ...
+
+EOF
+    exit 1
+}
+
+
+# entrance
+function main(){
+    if (($# == 0)); then
+        adcode_usage
+    fi
+
+    local action=${1:='usage'}
+    shift
+    case $action in
+        create ) adcode_create  $@ ;;
+        index  ) adcode_index   $@ ;;
+        order  ) adcode_order   $@ ;;
+        drop   ) adcode_drop    $@ ;;
+        trunc  ) adcode_trunc   $@ ;;
+        clean  ) adcode_clean   $@ ;;
+        dump   ) adcode_dump    $@ ;;
+        load   ) adcode_load    $@ ;;
+        backup ) adcode_backup  $@ ;;
+        restore) adcode_restore $@ ;;
+        check  ) adcode_check   $@ ;;
+        reload ) adcode_reload  $@ ;;
+        reset  ) adcode_reset   $@ ;;
+        setup  ) adcode_setup   $@ ;;
+        usage  ) adcode_usage   $@ ;;
+        *      ) adcode_usage   $@ ;;
+    esac
+}
+
+main $@

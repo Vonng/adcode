@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+#==============================================================#
+# Author: Vonng(fengruohang@outlook.com)                       #
+# Desc  : fences ctl                                           #
+#==============================================================#
+
+# change environment variable PGURL to customize data source
+# NOTICE: COPY require superuser privilege
+declare PGURL=${PGURL:='postgres://localhost:5432/adcode'}
+
+declare -r PROGRAM_DIR="$(cd $(dirname $0) && pwd)"
+declare -r PROJECT_DIR="$(cd "${PROGRAM_DIR}/../" && pwd)"
+
+declare -r DATA_DIR="${PROJECT_DIR}/data"
+declare -r FENCES_DIR="${DATA_DIR}/fences"
+declare -r ADCODE_DIR="${DATA_DIR}/adcode"
+declare -r BACKUP_DIR="${DATA_DIR}/backup"
+
+declare -r -i PARALLEL_WORKER=16
+
+#==============================================================#
+#                           FENCES                             #
+#==============================================================#
+# create fences table
+# warn: old fences will be dropped
+function fences_create(){
+    psql ${PGURL} <<-SQL
+        DROP TABLE IF EXISTS fences;
+        CREATE TABLE fences (
+          code   BIGINT PRIMARY KEY,
+          adcode INTEGER,
+          fence  GEOMETRY
+        );
+
+        -- comment
+        COMMENT ON TABLE fences IS '行政区划地理围栏';
+        COMMENT ON COLUMN fences.code IS '国家统计局12位行政区划代码';
+        COMMENT ON COLUMN fences.adcode IS '6位县级行政区划代码';
+        COMMENT ON COLUMN fences.fence IS '地理围栏,GCJ-02,MultiPolygon';
+SQL
+}
+
+# create index on fences, it's quite slow through
+function fences_index(){
+    psql ${PGURL} <<-SQL
+        CREATE INDEX ON fences USING BTREE ((code :: TEXT));
+        CREATE INDEX ON fences USING BTREE (adcode);
+        CREATE INDEX ON fences USING GIST (fence);
+SQL
+}
+
+# reorder fences in physical storage
+function fences_order(){
+    psql ${PGURL} <<-SQL
+        DROP TABLE IF EXISTS bk_adcode;
+        SELECT * INTO bk_adcode FROM adcode ORDER BY rank,code ;
+        TRUNCATE adcode;
+        INSERT INTO adcode SELECT * FROM bk_adcode ORDER BY rank, code;
+        DROP TABLE IF EXISTS bk_adcode;
+SQL
+}
+
+# drop fences table
+function fences_drop (){
+    local sql="DROP TABLE IF EXISTS fences;"
+    psql ${PGURL} -c "${sql}"
+}
+
+# truncate fences table
+function fences_trunc(){
+    local sql="TRUNCATE TABLE fences;"
+    psql ${PGURL} -c "${sql}"
+}
+
+# clean fence data directory
+function fences_clean(){
+    rm -rf ${FENCES_DIR}
+    mkdir -p ${FENCES_DIR}
+}
+
+# dump fences to csv
+# $1... :   optional list of adcode(6)
+# PARALLEL_WORKER will affect dump all action
+function fences_dump(){
+    fences_clean
+
+    # list of adcode(\d{6}) provided
+    if (($# != 0)); then
+        echo $@ | xargs -n1 -P 4 -I {} \
+        psql ${PGURL} -c "COPY(SELECT ST_AsGeoJSON(fence) FROM fences WHERE code = {}::BIGINT*1000000) TO '${FENCES_DIR}/{}.json';"
+        return $?
+    fi
+
+    # dump all fences beyond county level
+    psql ${PGURL} -Atzc 'SELECT DISTINCT code/1000000 as adcode FROM fences WHERE code%1000000=0;' \
+    | xargs -n1 -I {} -P ${PARALLEL_WORKER} \
+    psql ${PGURL} -c "COPY(SELECT ST_AsGeoJSON(fence) FROM fences WHERE code = {}::BIGINT*1000000) TO '${FENCES_DIR}/{}.json';" 1> /dev/null
+    return $?
+}
+
+
+# load fences from csv table to postgres
+# sequential load
+function fences_load(){
+    # if code is provided
+    if (($# != 0)); then
+        local adcodeList=$@
+        local -i n=$#
+    else
+        local adcodeList=$(ls ${FENCES_DIR} | sort |  awk -F"." '{print $1}')
+        local -i n=$(ls ${FENCES_DIR} | wc -l)
+    fi
+
+    # build insert sql
+    mkdir -p ${BACKUP_DIR}
+    tmpSqlFile="${BACKUP_DIR}/t_fences.sql"
+
+    echo "INSERT INTO fences (code, adcode, fence) VALUES " > ${tmpSqlFile}
+    for adcode in ${adcodeList} ;do
+        local -i code6=${adcode%.json}
+        local -i code12=${code6}*1000000
+        local file="${code6}.json"
+        echo -n "(${code12}, ${code6}, ST_GeomFromGeoJSON('" >> ${tmpSqlFile}
+        cat "${FENCES_DIR}/${file}" >> ${tmpSqlFile}
+
+        n=n-1
+        if((${n}==0)); then
+            # corner case
+            echo "'))" >> ${tmpSqlFile}
+        else
+            echo "'))," >> ${tmpSqlFile}
+        fi
+    done
+    echo "ON CONFLICT(code) DO UPDATE SET adcode=EXCLUDED.adcode, fence=EXCLUDED.fence;" >> ${tmpSqlFile}
+
+    echo "temp sql file : ${tmpSqlFile}, ready to commit"
+    # make sure temp sql always deleted
+    trap "rm -f ${tmpSqlFile}" INT TERM QUIT ABRT HUP
+
+    psql ${PGURL} -f ${tmpSqlFile}
+    rm -f ${tmpSqlFile}
+    return $?
+}
+
+# show fences distribution
+function fences_check(){
+    sql='SELECT count(*) AS cnt FROM fences;'
+    psql ${PGURL} -tzc "${sql}"
+    psql adcode -Atzc 'SELECT ST_AsGeoJSON(fence)::JSONB FROM fences OFFSET 4 LIMIT 1;'
+}
+
+# create backup using pg_dump
+function fences_backup(){
+    mkdir -p ${BACKUP_DIR}
+    pg_dump ${PGURL} -t fences -f ${BACKUP_DIR}/fences.sql
+}
+
+# restore fences from backup
+function fences_restore(){
+    fences_drop
+    psql ${PGURL} -f ${BACKUP_DIR}/fences.sql
+}
+
+# truncate & load fences
+function fences_reload(){
+    fences_trunc
+    fences_load
+    fences_check
+}
+
+# drop & create fences
+function fences_reset(){
+    fences_drop
+    fences_create
+}
+
+# create & load & index
+function fences_setup(){
+    fences_create
+    fences_load
+    fences_index
+}
+
+
+# print fences ctl usage
+function fences_usage(){
+    cat <<-EOF
+Usage:
+    bin/fences <action>
+
+    Where action could be:
+
+    create  :   create table
+    index   :   create index on fences
+    order   :   reorder fences physical storage
+    drop    :   drop table
+    trunc   :   truncate table
+    clean   :   remove dump data
+    dump    :   dump data to data/fences in json format
+    load    :   load data from data/fences/
+    backup  :   make a quick pg_dump backup
+    resotre :   restore from backup
+    check   :   glimpse at fences data
+    reload  :   truncate & reload from file
+    reset   :   drop and recreate table
+    setup   :   create table & load data & create index
+    usage   :   show this message
+
+    dump & load could accept a list of adcode, so they only
+    perform dump & load on those files rather than all data.
+    e.g. dump/load <code1> <code2> ...
+
+EOF
+    exit 1
+}
+
+
+# entrance
+function main(){
+    if (($# == 0)); then
+        fences_usage
+    fi
+
+    local action=${1:='usage'}
+    shift
+    case $action in
+        create ) fences_create  $@ ;;
+        index  ) fences_index   $@ ;;
+        order  ) fences_order   $@ ;;
+        drop   ) fences_drop    $@ ;;
+        trunc  ) fences_trunc   $@ ;;
+        clean  ) fences_clean   $@ ;;
+        dump   ) fences_dump    $@ ;;
+        load   ) fences_load    $@ ;;
+        backup ) fences_backup  $@ ;;
+        restore) fences_restore $@ ;;
+        check  ) fences_check   $@ ;;
+        reload ) fences_reload  $@ ;;
+        reset  ) fences_reset   $@ ;;
+        setup  ) fences_setup   $@ ;;
+        usage  ) fences_usage   $@ ;;
+        *      ) fences_usage   $@ ;;
+    esac
+}
+
+main $@
