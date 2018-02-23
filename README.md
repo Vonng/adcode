@@ -34,7 +34,7 @@
 | 数据目录 |                [`data/adcode/`](data/adcode/)                |
 | 控制脚本 |                  [`bin/adcode`](bin/adcode)                  |
 | 模式定义 |              [`sql/adcode.ddl`](sql/adcode.ddl)              |
-| 数据样例 | 朝阳区行政区划：[data/adcode/110105.csv](data/adcode/110105.csv) |
+| 数据样例 |   朝阳区：[data/adcode/110105.csv](data/adcode/110105.csv)   |
 | 相关知识 | [中国行政区划相关知识](https://vonng.com/blog/admin-division/) |
 
 #### 数据结构
@@ -122,9 +122,9 @@ Usage:
 	create  :   创建adcode表，若已存在则会删除原表。
 	index   :   在adcode表上创建索引（注意，大批量插入时大量索引会严重拖慢插入速度）。
 	order   :   排序重建adcode，使其物理有序(rank,code ASC)
-	drop	:	删除fences表
+	drop	:   删除fences表
 	trunc   :   清空adcode表
-    clean	:	清空data/adcode中的转储
+    clean	:   清空data/adcode中的转储
 	dump    :   将adcode表以文本形式转储至data/adcode/，提供adcode列表参数，则只转储对应数据
 	load    :   从data/adcode/文本转储导入adcode表，提供adcode列表参数，则只导入对应数据
 	backup  :   备份adcode至data/backup/adcode.sql
@@ -132,7 +132,7 @@ Usage:
 	check   :   检查adcode数据
 	reload  :   清空adcode表，并重新从data/adcode中加载数据
 	reset   :   删除并创建adcode表
-	setup	:	初始化：建表，加载数据，创建索引。
+	setup	:   初始化：建表，加载数据，创建索引。
 	usage   :   显示adcode控制脚本用法
 ```
 
@@ -196,9 +196,9 @@ Usage:
 	create  :   创建fences表，若已存在则会删除原表。
 	index   :   在fences表上创建索引（注意，大批量插入时大量索引会严重拖慢插入速度）。
 	order   :   排序重建fences，使其物理有序(rank,code ASC)
-	drop	:	删除fences表
+	drop	:   删除fences表
 	trunc   :   清空fences表
-	clean	:	清空data/fences中的转储
+	clean	:   清空data/fences中的转储
 	dump    :   将fences表以文本形式转储至data/fences/，提供adcode列表参数，则只转储对应数据
 	load    :   从data/fences/文本转储导入fences表，提供adcode列表参数，则只导入对应数据
 	backup  :   备份fences至data/backup/fences.sql
@@ -206,7 +206,7 @@ Usage:
 	check   :   检查fences数据
 	reload  :   清空fences表，并重新从data/fences中加载数据
 	reset   :   删除并创建fences表
-	setup	:	初始化：建表，加载数据，创建索引。
+	setup	:   初始化：建表，加载数据，创建索引。
 	usage   :   显示fences控制脚本用法
 ```
 
@@ -237,9 +237,9 @@ make setup	  # 创建、加载、建立索引
 
 ## CONTRIBUTION
 
-本项目欢迎贡献，请以ISSUE的方式指出变更。需要包括：民政部的公告链接，最好能以SQL形式给出变更内容。
+本项目欢迎贡献，区划数据类变更需要包括：民政部的公告链接，最好能以SQL形式给出变更内容。
 
-PR可以直接在`adcode.csv`与`fences/*.json`中进行变更，能从commit log中清晰看出变更为宜。
+PR可以直接在`adcode/*.csv`与`fences/*.json`中进行变更，能从commit log中清晰看出变更内容为宜，不要调整格式。
 
 请注意，任何合并至master的PR，都需要确保数据一致性，包括：
 
@@ -254,4 +254,6 @@ PR可以直接在`adcode.csv`与`fences/*.json`中进行变更，能从commit lo
 
 ## LICENSE
 
-* WTFPL
+![](https://i.creativecommons.org/l/by/4.0/88x31.png)
+
+本作品采用<a rel="license" href="http://creativecommons.org/licenses/by/4.0/">知识共享署名 4.0 国际许可协议</a>进行许可。
