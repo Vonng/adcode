@@ -4,6 +4,8 @@
 
 数据来自国家统计局、民政部、高德地图，均为公开数据。
 
+要点在于地理位置数据
+
 
 
 ## SYNOPSIS
@@ -19,21 +21,6 @@
   * [行政区划](data/adcode/)是csv格式的数据文件，按所属县级行政区划代码（6位）分片在各自的文件中。
   * [地理围栏](data/fences)是json格式的数据文件，相应县级行政区划代码（6位）的地理围栏以GeoJSON形式存储在单独文件中
   * 使用文本数据格式是为了便于其他应用和数据库使用，但本地实际上使用的是PostgreSQL+PostGIS。[`bin/`](bin/)目录中提供了用于ETL的实用脚本。
-
-
-## 数据质量
-
-
-
-130421000000	130400000000	邯郸县	county	3	130421
-139001000000	139000000000	定州市	county	3	139001
-139002000000	139000000000	辛集市	county	3	139002
-320812000000	320800000000	清江浦区	county	3	320812
-330204000000	330200000000	江东区	county	3	330204
-410211000000	410200000000	金明区	county	3	410211
-
-
-
 
 
 ## DESCRIPTION
@@ -135,9 +122,16 @@
 | town     | 42846  | 35350         | 7496   |
 | village  | 664892 | 59035         | 605857 |
 
-对于县以上的地理数据，除了6个（16~17年发生变更）的县级区划没有地理数据，其他都是最新（2018-02）的数据。
+对于县以上的地理数据，除了6个（16~17年发生变更）的县级区划没有地理数据，其他都是最新（2018-02）的数据。六个过期县级行政区划：
 
-
+```bash
+130421000000	130400000000	邯郸县		county	3	130421
+139001000000	139000000000	定州市		county	3	139001
+139002000000	139000000000	辛集市		county	3	139002
+320812000000	320800000000	清江浦区	county	3	320812
+330204000000	330200000000	江东区		county	3	330204
+410211000000	410200000000	金明区		county	3	410211
+```
 
 #### 实用脚本
 
@@ -151,21 +145,21 @@ Usage:
 	
 	action list:
 
-	create  :   创建adcode表，若已存在则会删除原表。
-	index   :   在adcode表上创建索引（注意，大批量插入时大量索引会严重拖慢插入速度）。
-	order   :   排序重建adcode，使其物理有序(rank,code ASC)
-	drop	:   删除fences表
-	trunc   :   清空adcode表
-    clean	:   清空data/adcode中的转储
-	dump    :   将adcode表以文本形式转储至data/adcode/，提供adcode列表参数，则只转储对应数据
-	load    :   从data/adcode/文本转储导入adcode表，提供adcode列表参数，则只导入对应数据
-	backup  :   备份adcode至data/backup/adcode.sql
-	resotre :   从备份data/backup/adcode.sql恢复adcode
-	check   :   检查adcode数据
-	reload  :   清空adcode表，并重新从data/adcode中加载数据
-	reset   :   删除并创建adcode表
-	setup	:   初始化：建表，加载数据，创建索引。
-	usage   :   显示adcode控制脚本用法
+	create	:	创建adcode表，若已存在则会删除原表。
+	index	:	在adcode表上创建索引（注意，大批量插入时大量索引会严重拖慢插入速度）。
+	order	:	排序重建adcode，使其物理有序(rank,code ASC)
+	drop	:	删除fences表
+	trunc	:	清空adcode表
+	clean	:	清空data/adcode中的转储
+	dump	:	将adcode表以文本形式转储至data/adcode/，提供adcode列表参数，则只转储对应数据
+	load	:	从data/adcode/文本转储导入adcode表，提供adcode列表参数，则只导入对应数据
+	backup	:	备份adcode至data/backup/adcode.sql
+	resotre	:	从备份data/backup/adcode.sql恢复adcode
+	check	:	检查adcode数据
+	reload	:	清空adcode表，并重新从data/adcode中加载数据
+	reset	:	删除并创建adcode表
+	setup	:	初始化：建表，加载数据，创建索引。
+	usage	:	显示adcode控制脚本用法
 ```
 
 本地使用时，可以采用`backup/restore`的方式进行备份与恢复，速度会快很多（几秒）。
@@ -227,21 +221,21 @@ Usage:
 	
 	action list:
 
-	create  :   创建fences表，若已存在则会删除原表。
-	index   :   在fences表上创建索引（注意，大批量插入时大量索引会严重拖慢插入速度）。
-	order   :   排序重建fences，使其物理有序(rank,code ASC)
-	drop	:   删除fences表
-	trunc   :   清空fences表
-	clean	:   清空data/fences中的转储
-	dump    :   将fences表以文本形式转储至data/fences/，提供adcode列表参数，则只转储对应数据
-	load    :   从data/fences/文本转储导入fences表，提供adcode列表参数，则只导入对应数据
-	backup  :   备份fences至data/backup/fences.sql
-	resotre :   从备份data/backup/fences.sql恢复fences
-	check   :   检查fences数据
-	reload  :   清空fences表，并重新从data/fences中加载数据
-	reset   :   删除并创建fences表
-	setup	:   初始化：建表，加载数据，创建索引。
-	usage   :   显示fences控制脚本用法
+	create	:	创建fences表，若已存在则会删除原表。
+	index	:	在fences表上创建索引（注意，大批量插入时大量索引会严重拖慢插入速度）。
+	order	:	排序重建fences，使其物理有序(rank,code ASC)
+	drop	:	删除fences表
+	trunc	:	清空fences表
+	clean	:	清空data/fences中的转储
+	dump	:	将fences表以文本形式转储至data/fences/，提供adcode列表参数，则只转储对应数据
+	load	:	从data/fences/文本转储导入fences表，提供adcode列表参数，则只导入对应数据
+	backup	:	备份fences至data/backup/fences.sql
+	resotre	:	从备份data/backup/fences.sql恢复fences
+	check	:	检查fences数据
+	reload	:	清空fences表，并重新从data/fences中加载数据
+	reset	:	删除并创建fences表
+	setup	:	初始化：建表，加载数据，创建索引。
+	usage	:	显示fences控制脚本用法
 ```
 
 ### 其他
@@ -249,8 +243,11 @@ Usage:
 在项目顶层目录提供了[makefile](makefile)，可以对两个表同时执行同样的操作。
 
 ```bash
-make createdb # 创建数据库
-make setup	  # 创建、加载、建立索引
+# 创建数据库
+make createdb
+
+# 创建、加载、建立索引
+make setup
 ```
 
 
@@ -258,12 +255,9 @@ make setup	  # 创建、加载、建立索引
 ## ISSUE
 
 * 使用国家统计局最新的2016年07月31日数据，部分区划信息已经过时，待后续补充修正。
-* 直辖行政区字段目前仅有省级数据（直辖市），直辖县，直辖镇待后续补充。
-* 虚拟行政区字段目前没有实际使用，待后续补充。
-* 少部分行政区划地理中心点经纬度坐标数据缺失。
-* 地理围栏不是所有行政区划都有，待补充。
-* 港澳台地区数据有待补充。
-* 邮政编码与长途区号数据有遗漏，待补充
+* 地理围栏，县级以上会有个别新增县没有数据。后续补充。
+* 港澳台地区数据有待补充，因为没有公开的省以下级别的官方行政区划代码。
+* 邮政编码与长途区号数据有待校对。
 
 
 

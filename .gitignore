@@ -3,6 +3,9 @@
 # Backup
 data/backup
 data/backup/
+data/gaode
+
+scripts/
 
 # MacOS
 .DS_Store
