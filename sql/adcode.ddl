@@ -19,6 +19,7 @@ CREATE TABLE adcode (
   ur_code      VARCHAR(4),
   municipality BOOLEAN,
   virtual      BOOLEAN,
+  dummy        BOOLEAN,
   longitude    FLOAT,
   latitude     FLOAT,
   center       GEOMETRY,
@@ -42,7 +43,8 @@ COMMENT ON COLUMN adcode.post_code IS '邮政编码';
 COMMENT ON COLUMN adcode.area_code IS '长途区号';
 COMMENT ON COLUMN adcode.ur_code IS '3位城乡属性划分代码';
 COMMENT ON COLUMN adcode.municipality IS '是否为直辖行政单位';
-COMMENT ON COLUMN adcode.virtual IS '是否为虚拟行政单位';
+COMMENT ON COLUMN adcode.virtual IS '虚拟行政单位标记，如市辖区、省直辖县';
+COMMENT ON COLUMN adcode.dummy IS '虚拟行政单位标记，例如虚拟村、虚拟社区';
 COMMENT ON COLUMN adcode.longitude IS '地理中心经度';
 COMMENT ON COLUMN adcode.latitude IS '地理中心纬度';
 COMMENT ON COLUMN adcode.center IS '地理中心, ST_Point';
